@@ -34,16 +34,16 @@ body.held #wrap{position:fixed;top:0;left:0;right:0;will-change:transform}
 .ri .tx{margin:0}.ri .nm{display:inline-flex;margin-right:6px}
 .ri .ft{margin-top:2px}
 .more{font-size:13px;color:var(--sub);padding:4px 0 0 32px;cursor:pointer;user-select:none}.more b{margin:0 2px}.more .cur{color:#00aeec}.more b{color:#00aeec;font-weight:normal}
-.film canvas{display:block;margin:6px 0 8px}
+.film{padding:5px 0}.film canvas{display:block}
 .at{color:#008ac5}
 .pic{display:block;max-width:240px;width:60%;border-radius:6px;margin:4px 0 8px}
 </style>
 </head>
 <body>
 <div id="wrap"></div>
-<audio id="au" src="audio.m4a" preload="auto" playsinline></audio>
+<audio id="au" preload="auto" playsinline></audio>
 <!-- 每格明暗存成的小黑白视频，只拿来读像素。不能 display:none，苹果手机对隐藏的视频不解码画面 -->
-<video id="vd" src="luma.mp4" preload="auto" muted playsinline webkit-playsinline x5-playsinline x5-video-player-type="h5-page"
+<video id="vd" preload="auto" muted playsinline webkit-playsinline x5-playsinline x5-video-player-type="h5-page"
   style="position:fixed;left:0;bottom:0;width:2px;height:2px;opacity:0.01;pointer-events:none"></video>
 <script src="content.js"></script>
 <script>
@@ -89,7 +89,8 @@ const fills = C.fillSteps.map((r, i) => {
   const s = [...allCopy.slice(start, start + len)].map(ch => rnd() < r ? C.fillChar : ch).join("");
   return {name: ["一只小未o", C.launch.name][i % 2], lv: 5, likes: Math.floor(rnd() * 900), time: "刚刚", text: s};
 });
-const FILM_CARDS = 8;           // 字符画评论叠几条（盖满一屏再多一点）
+const FILM_CARDS = 8;           // 字符画叠几条（盖满一屏再多一点）
+const NOISE_CARDS = 4;          // 字符画前面垫几页乱码
 const A = C.article;
 wrap.innerHTML =
   `<div class="art"><h1>${esc(A.title)}</h1>
@@ -99,8 +100,8 @@ wrap.innerHTML =
   C.comments.map(c => comment(c)).join("") +
   comment(C.launch, {id: "trap"}) +
   fills.map((c, i) => comment(c, i === 0 ? {id: "fill0"} : {})).join("") +
-  Array.from({length: FILM_CARDS}, (_, i) =>
-    comment({name: C.filmName, lv: 6, likes: 0, time: "刚刚"}, {cls: "film", id: i ? "" : "film0", body: "<canvas></canvas>"})).join("");
+  `<div class="film noise"></div>`.repeat(NOISE_CARDS).replace(/<\/div>/g, "<canvas></canvas></div>") +
+  Array.from({length: FILM_CARDS}, (_, i) => `<div class="film" ${i ? "" : 'id="film0"'}><canvas></canvas></div>`).join("");
 document.title = A.title;
 // ---------- 楼中楼：点"点击查看"展开全部回复，每页 10 条，可以翻页 ----------
 const PER = 10;
@@ -148,29 +149,54 @@ wrap.addEventListener("click", e => {
   if (p !== undefined) return showPage(m, +p);
   if (e.target.tagName === "B") showPage(m, 0);
 });
-const filmCards = [...document.querySelectorAll(".film")];
-const filmLikes = filmCards.map(c => c.querySelector(".lk"));
+const allCards = [...document.querySelectorAll(".film")];
+const noiseCards = allCards.filter(c => c.classList.contains("noise"));
+const filmCards = allCards.filter(c => !c.classList.contains("noise"));
 
 // ---------- 字符画评论的尺寸 ----------
 const px = document.createElement("canvas"), pctx = px.getContext("2d", {willReadFrequently: true});
 let cols, rows, cellW, period;
 function layoutFilm() {
   const dpr = devicePixelRatio || 1;
-  const main = filmCards[0].querySelector(".main");
-  const indent = main.offsetLeft - filmCards[0].offsetLeft;          // 字符画往左伸到头像底下，铺满整条评论
   const w = filmCards[0].clientWidth;
-  const ratio = (vd.videoHeight || 84) / (vd.videoWidth || 300);     // 小视频每格的行列比
+  const ratio = 84 / 300;                                            // 小视频每格的行列比（300 x 84）
   cols = Math.max(40, Math.floor(w / CHAR_PX)); rows = Math.round(cols * ratio);
   px.width = cols; px.height = rows;
   const cssW = cols * CHAR_PX, cssH = rows * CHAR_PX * 2;
-  for (const card of filmCards) {
+  for (const card of allCards) {
     const cv = card.querySelector("canvas");
-    cv.style.width = cssW + "px"; cv.style.height = cssH + "px"; cv.style.marginLeft = -indent + "px";
+    cv.style.width = cssW + "px"; cv.style.height = cssH + "px";
     cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
   }
   cellW = CHAR_PX * dpr;
   period = filmCards[1].offsetTop - filmCards[0].offsetTop;          // 一条字符画评论的高度
 }
+
+// ---------- 乱码：跟字符画同样大小，字随机 ----------
+function drawNoise(cv) {
+  const ctx = cv.getContext("2d");
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--ink");
+  ctx.textBaseline = "middle";
+  ctx.font = "100px " + FONT;
+  ctx.font = 100 * cellW / ctx.measureText("M").width + "px " + FONT;
+  for (let y = 0; y < rows; y++) {
+    let row = "";
+    for (let x = 0; x < cols; x++) row += RAMP[1 + Math.floor(Math.random() * 9)];
+    ctx.fillText(row, 0, (y + 0.5) * cellW * 2);
+  }
+}
+layoutFilm();
+noiseCards.forEach(c => drawNoise(c.querySelector("canvas")));
+filmCards.forEach(c => drawNoise(c.querySelector("canvas")));
+addEventListener("resize", () => { if (mode === "free") { layoutFilm(); allCards.forEach(c => drawNoise(c.querySelector("canvas"))); } });
+
+// ---------- 打开页面就把视频和伴奏整个下载进内存，开播时不用现拉 ----------
+let mediaReady = false;
+Promise.all(["luma.mp4", "audio.m4a"].map(u => fetch(u).then(r => r.blob())))
+  .then(([v, a]) => { vd.src = URL.createObjectURL(v); au.src = URL.createObjectURL(a); })
+  .catch(() => { vd.src = "luma.mp4"; au.src = "audio.m4a"; })
+  .finally(() => { vd.load(); au.load(); mediaReady = true; });
 
 // ---------- 画一格：白底时暗的地方用密的字；黑底反过来 ----------
 let lastVT = -1;
@@ -244,8 +270,6 @@ function launch() {
   document.body.classList.add("held");
   wrap.style.transform = `translateY(${-from}px)`;
   scrollTo(0, 0);
-  layoutFilm();
-  if (vd.readyState >= 2) drawFrame();
   const to = $("film0").offsetTop, t0 = performance.now();
   startFilm();                                   // 声音和画面现在就开始，不等动画
   const step = t => {
@@ -256,37 +280,43 @@ function launch() {
   requestAnimationFrame(step);
 }
 
-// ---------- 定住放映：每刷新一次滚过一条，屏幕上看起来就是一条在播的评论 ----------
-let audioOn = false;
+// ---------- 定住放映：数据没到就闪乱码，到了立刻开始 ----------
+let audioOn = false, playing = false;
 function startFilm() {
   mode = "film";
+  requestAnimationFrame(film);
+}
+function beginPlayback() {
+  playing = true;
   vd.muted = true; vd.currentTime = 0; au.currentTime = 0; au.muted = false;
   vd.play().catch(() => {});
   au.play().then(() => { audioOn = true; }).catch(() => {});   // 声音和画面同时直接开
-  requestAnimationFrame(film);
 }
+au.addEventListener("pause", () => {           // 被系统或缓冲打断就自动续上
+  if (playing && !au.ended) setTimeout(() => au.play().catch(() => {}), 60);
+});
 function film() {
-  let t = vd.currentTime;
-  if (audioOn && !au.paused) {                 // 有声音就以声音为准
-    t = au.currentTime;
-    if (Math.abs(vd.currentTime - t) > 0.15) vd.currentTime = t;
+  if (!playing) {
+    if (mediaReady) beginPlayback();
+    filmCards.forEach(c => drawNoise(c.querySelector("canvas")));
+    return requestAnimationFrame(film);
   }
-  const passed = Math.floor(t * hz);           // 到现在一共滚过了多少条
-  filmLikes.forEach((el, i) => el.textContent = "👍 " + (passed + i));
-  if (vd.readyState >= 2 && vd.currentTime !== lastVT) { lastVT = vd.currentTime; drawFrame(); }
+  if (audioOn && !au.paused && Math.abs(vd.currentTime - au.currentTime) > 0.2) vd.currentTime = au.currentTime;
+  if (vd.readyState >= 2 && vd.currentTime > 0 && vd.currentTime !== lastVT) { lastVT = vd.currentTime; drawFrame(); }
+  else if (lastVT < 0) filmCards.forEach(c => drawNoise(c.querySelector("canvas")));   // 第一格还没解出来，继续闪乱码
   if (!vd.ended) requestAnimationFrame(film);
 }
 
 // 万一浏览器硬拦了声音：画面照放，下一次碰屏幕时从同一位置补上（不是触发条件，只是补救）
 // 微信：在它的官方事件里先把视频和声音"暖"一下，之后才能由页面直接开播
 function wxWarm() {
+  if (mode !== "free") return;
   for (const m of [vd, au]) { m.muted = true; m.play().then(() => { m.pause(); m.currentTime = 0; if (m === au) m.muted = false; }).catch(() => {}); }
 }
 if (window.WeixinJSBridge) wxWarm(); else document.addEventListener("WeixinJSBridgeReady", wxWarm);
 addEventListener("pointerdown", () => {
   if (mode === "film" && !audioOn) { au.currentTime = vd.currentTime; au.play().then(() => { audioOn = true; }).catch(() => {}); }
 }, {capture: true});
-vd.addEventListener("loadeddata", () => { if (mode !== "free") drawFrame(); });
 </script>
 </body>
 </html>
