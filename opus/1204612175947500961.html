@@ -42,7 +42,7 @@ body.held #wrap{position:fixed;top:0;left:0;right:0;will-change:transform}
 .input button.ok{opacity:1}
 
 /* 评论 */
-.av{flex:none;border-radius:50%;object-fit:cover;background:var(--soft);display:block}
+.av{flex:none;border-radius:50%;display:block;background:var(--soft) url(avatars.webp) no-repeat;background-size:1100% 800%}
 .cm{display:flex;gap:14px;padding-top:20px}
 .cm>.avw .av{width:40px;height:40px}
 @media (max-width:480px){.cm>.avw .av,.cbox .av{width:36px;height:36px}.cm{gap:12px}}
@@ -143,8 +143,9 @@ const rich = s => esc(s).replace(/\[([^\]]{1,8})\]/g, (m, k) => EMO[k] || m)
                         .replace(/\{([^{}]{1,12})\}/g, `<span class="kw">$1${LENS}</span>`);   // {词} = 蓝色搜索关键词
 const AVATARS = 88;                              // avatars 文件夹里 a0~a39 是照片，a40~a87 是 AI 生成的二次元头像，按名字固定分配
 const avIdx = n => [...n].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 9973, 7) % AVATARS;
-const avSrc = n => `avatars/a${avIdx(n)}.jpg`;
-const av = (n, vip) => `<span class="avw"><img class="av" src="${avSrc(n)}" alt="" loading="lazy">${vip ? '<i class="big">大</i>' : ""}</span>`;
+// 88 个头像拼在一张 11 x 8 的图里（avatars.webp），只下载一次
+const avPos = n => { const i = avIdx(n); return `${(i % 11) / 10 * 100}% ${Math.floor(i / 11) / 7 * 100}%`; };
+const av = (n, vip) => `<span class="avw"><i class="av" style="background-position:${avPos(n)}"></i>${vip ? '<i class="big">大</i>' : ""}</span>`;
 const isUp = n => n === C.article.author;
 const LENS = '<svg viewBox="0 0 10 10"><path d="M4.3 1.2a3.1 3.1 0 1 1 0 6.2 3.1 3.1 0 0 1 0-6.2zM6.6 6.6 9 9"/></svg>';
 const nm = (n, lv, vip) => `<span class="nm${vip ? " vip" : ""}">${esc(n)}<i class="lv l${lv ?? 3}">LV${lv ?? 3}</i></span>`;
@@ -399,8 +400,9 @@ function paintBlinds(off) {
 }
 
 // ================= 音视频：直接写地址；打开页面就在后台各请求一遍，存进浏览器缓存 =================
-vd.src = "luma.mp4"; au.src = "audio.m4a";
-fetch("luma.mp4").catch(() => {});
+au.src = "audio.m4a";
+// 手机屏幕上只画得出一百多列字，用 150 列的小视频（268 KB）；电脑用 300 列（418 KB）
+const VIDEO = Math.min(innerWidth, screen.width || innerWidth) <= 600 ? "luma_m.mp4" : "luma.mp4";
 // 伴奏整首（约 400 KB）下进内存：开播不用等缓冲，网络断了也不会停
 let audioMem = null;
 fetch("audio.m4a").then(r => r.ok ? r.blob() : Promise.reject()).then(b => {
@@ -414,11 +416,17 @@ fetch("audio.m4a").then(r => r.ok ? r.blob() : Promise.reject()).then(b => {
 const SHEET = {cols: 120, rows: 34, per: 480, gx: 16, n: 3, fps: 15, frames: 1401};
 let useSheets = /MicroMessenger/i.test(navigator.userAgent) || new URLSearchParams(location.search).has("sheet");
 const sheetImgs = [];
-function loadSheets() {
+function loadSheets() {                            // 先试 AVIF（小一半），手机不认这个格式就退回 WebP
   if (sheetImgs.length) return;
-  for (let i = 0; i < SHEET.n; i++) { const im = new Image(); im.src = `sheets/s${i}.webp`; sheetImgs.push(im); }
+  for (let i = 0; i < SHEET.n; i++) {
+    const im = new Image();
+    im.onerror = () => { if (!im.src.endsWith(".webp")) im.src = `sheets/s${i}.webp`; };
+    im.src = `sheets/s${i}.avif`;
+    sheetImgs.push(im);
+  }
 }
 if (useSheets) loadSheets();
+else { vd.src = VIDEO; fetch(VIDEO).catch(() => {}); }     // 只有不用印样时才下视频
 
 // ================= 刷新也记得：看到哪、有没有中招、视频播到哪 =================
 let mode = "free", flyVT0 = 0;            // flyVT0：车轮效应从视频第几秒开始算（刷新后接着用）
@@ -512,7 +520,7 @@ function seek(m, t) {                              // 元数据没到时设 curr
 function beginPlayback() {
   playing = true;
   playT0 = performance.now();
-  vd.muted = true; au.muted = false;
+  vd.muted = true; au.muted = false; au.volume = 1;
   seek(au, startAt);
   if (!useSheets) { seek(vd, startAt); vd.play().catch(() => {}); }
   au.play().then(() => { audioOn = true; }).catch(() => {});   // 声音和画面同时直接开
@@ -622,21 +630,72 @@ if (saved && saved.mode === "done") {
   addEventListener("load", () => { if (mode === "free") { scrollTo(0, saved.y); lastY = scrollY; } }, {once: true});
 }
 
-// ================= 声音兜底 =================
-// 微信：在它的官方事件里先把视频和声音"暖"一下；刷新后正在播的话，借这个机会把声音接上
-function tryAudio() {
+// ================= 声音：全局静音预播解锁（方案一） =================
+// 浏览器、微信、QQ 都不让"没碰过页面"的访客直接出声，滑动也不算。
+// 做法：对方第一次碰页面（点一下、按一下、敲键盘都算）的那一瞬间，
+// 抢在这次交互里播一个 0.02 秒的静音 wav —— 浏览器记下这次合规交互，
+// 这个域名的声音权限就解锁了，之后开播不用再碰、伴奏自己就出来。
+// 真被拦住时（后台开的标签、刷新后还没碰过、浏览器更严）画面照放，
+// 碰一下屏幕，声音从该放到的位置接上。
+const SILENT = "data:audio/wav;base64,UklGRmQBAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YUABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";   // 0.02 秒静音 wav
+let audioUnlocked = false, unlocking = false, silentEl = null;
+function silentAudio() {
+  if (!silentEl) { silentEl = new Audio(SILENT); silentEl.volume = 0; silentEl.playsInline = true; }
+  return silentEl;
+}
+function tryAudio() {                       // 被拦了：碰一下屏幕，声音从该放到的位置补上
   if (mode === "film" && playing && !audioOn) {
     au.currentTime = clock();
     au.play().then(() => { audioOn = true; }).catch(() => {});
   }
 }
+function warmAu() {                         // 真身也暖一下：iOS 是按元素解锁的，只暖别的元素不算
+  if (playing) { if (!audioOn) tryAudio(); return null; }   // 已经开播了：把声音直接接上
+  if (mode === "done") return null;
+  const vol = au.volume, muted = au.muted;
+  au.muted = true; au.volume = 0;           // iOS 上 volume 是摆设，必须 muted 才不出声
+  const back = () => { if (playing) return; au.muted = muted; au.volume = vol; };
+  let p = null;
+  try { p = au.play(); } catch (e) { back(); return null; }
+  if (!p || !p.then) { back(); return null; }
+  return p.then(() => { if (!playing) au.pause(); back(); }, back);
+}
+function unlockAudio() {
+  if (audioUnlocked || unlocking) return;
+  unlocking = true;
+  let over = false;
+  // 光"滑动"不算合规交互：静音 wav 能播（音量 0 浏览器不管），
+  // 但浏览器不肯给声音权限。所以看浏览器自己的账本：
+  // 点过、按过、敲过键盘才算数；只划过就不摘监听，等真碰一次。
+  const counted = () => !navigator.userActivation || navigator.userActivation.hasBeenActive;
+  const done = () => {
+    if (over || !counted()) { if (!over) unlocking = false; return; }
+    over = true; unlocking = false;
+    audioUnlocked = true;
+    try { silentAudio().pause(); } catch (e) {}
+    for (const t of UNLOCK) removeEventListener(t, unlockAudio, true);
+    console.log("声音权限已成功解锁");
+    if (playing && !audioOn) tryAudio();    // 已经开播了：马上把声音接上
+  };
+  const nope = () => { if (!over) unlocking = false; };    // 这次没被浏览器认账：等下一次碰
+  const sp = silentAudio().play();          // 图中那招：静音 wav 先播一下
+  if (sp && sp.then) sp.then(done, nope); else done();
+  const w = warmAu(); if (w) w.then(done, nope);
+  setTimeout(() => { unlocking = false; }, 1200);   // 回执太慢就不等，下次碰页面再试
+}
+// 能被浏览器认账的交互都听一遍（capture，最先拿到）；解锁完就全摘掉
+const UNLOCK = ["pointerdown", "touchstart", "touchend", "mousedown", "click", "keydown"];
+for (const t of UNLOCK) addEventListener(t, unlockAudio, {capture: true, passive: true});
+// 微信：在它的官方事件里先把视频暖一下；刷新后正在播的话，借这个机会把声音接上
 function wxReady() {
-  if (mode === "free") {
-    for (const m of useSheets ? [au] : [vd, au]) { m.muted = true; m.play().then(() => { m.pause(); m.currentTime = 0; if (m === au) m.muted = false; }).catch(() => {}); }
+  unlockAudio();
+  if (mode === "free" && !useSheets) {
+    vd.muted = true;
+    vd.play().then(() => { vd.pause(); vd.currentTime = 0; }).catch(() => {});
   } else tryAudio();
 }
 if (window.WeixinJSBridge) wxReady(); else document.addEventListener("WeixinJSBridgeReady", wxReady);
-addEventListener("pointerdown", tryAudio, {capture: true});      // 浏览器硬拦了声音：碰一下屏幕就从同一位置补上
+addEventListener("pointerdown", tryAudio, {capture: true});   // 硬被拦了：碰一下屏幕就补上声音
 </script>
 </body>
 </html>
