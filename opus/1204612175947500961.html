@@ -193,6 +193,7 @@ const fills = C.fillSteps.map((r, i) => {
   const q = r >= 1 ? 1 : r / (L * (1 - r) + r);   // 让最后被替换掉的比例正好是 r
   let s = "";
   for (let k = 0; k < src.length;) { if (rnd() < q) { s += C.fillChar; k += L; } else s += src[k++]; }
+  if (C.fillFixed && C.fillFixed[i]) s = C.fillFixed[i];
   return {name: ["一只小柚o", C.launch.name][i % 2], lv: 5, likes: Math.floor(rnd() * 900), time: "刚刚", text: s};
 });
 const card = i => `<div class="film" ${i === 0 ? 'id="film0"' : ""}>
