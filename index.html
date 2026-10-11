@@ -48,7 +48,7 @@ body.held #wrap{position:fixed;top:0;left:0;right:0;will-change:transform}
 <script src="content.js"></script>
 <script>
 const RAMP = " .:-=+*#%@";
-const CHAR_PX = 4;              // 字符画里一个字多宽（像素），越小越细腻、越难看清是字
+const CHAR_PX = (devicePixelRatio || 1) >= 2 ? 2.5 : 4;   // 字符画里一个字多宽（像素）：手机屏幕密，字可以更小、格子更多
 const FONT = "Consolas,Menlo,'Roboto Mono','Droid Sans Mono',monospace";
 const $ = id => document.getElementById(id);
 const au = $("au"), vd = $("vd"), wrap = $("wrap");
@@ -156,14 +156,16 @@ const px = document.createElement("canvas"), pctx = px.getContext("2d", {willRea
 let cols, rows, cellW, period;
 function layoutFilm() {
   const dpr = devicePixelRatio || 1;
-  const w = filmCards[0].querySelector(".main").clientWidth;
+  const main = filmCards[0].querySelector(".main");
+  const indent = main.offsetLeft - filmCards[0].offsetLeft;          // 字符画往左伸到头像底下，铺满整条评论
+  const w = filmCards[0].clientWidth;
   const ratio = (vd.videoHeight || 84) / (vd.videoWidth || 300);     // 小视频每格的行列比
   cols = Math.max(40, Math.floor(w / CHAR_PX)); rows = Math.round(cols * ratio);
   px.width = cols; px.height = rows;
   const cssW = cols * CHAR_PX, cssH = rows * CHAR_PX * 2;
   for (const card of filmCards) {
     const cv = card.querySelector("canvas");
-    cv.style.width = cssW + "px"; cv.style.height = cssH + "px";
+    cv.style.width = cssW + "px"; cv.style.height = cssH + "px"; cv.style.marginLeft = -indent + "px";
     cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
   }
   cellW = CHAR_PX * dpr;
