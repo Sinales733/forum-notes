@@ -345,11 +345,23 @@ function layoutFilm() {                           // 配图铺满整行
 }
 let lastVT = -1;
 const master = document.createElement("canvas");  // 当前这一格字符画先画在这张"底片"上
-function paintFrame() {                           // 读小视频当前这一帧，亮的地方用密的字
+function drawSource(t) {                          // 把第 t 秒的明暗画到小画布上；还没准备好就返回 false
+  pctx.imageSmoothingQuality = "high";
+  if (useSheets) {
+    const k = Math.min(SHEET.frames - 1, Math.max(0, Math.floor(t * SHEET.fps)));
+    const im = sheetImgs[Math.floor(k / SHEET.per)], j = k % SHEET.per;
+    if (!im || !im.complete || !im.naturalWidth) return false;
+    pctx.drawImage(im, (j % SHEET.gx) * SHEET.cols, Math.floor(j / SHEET.gx) * SHEET.rows, SHEET.cols, SHEET.rows, 0, 0, cols, rows);
+    return true;
+  }
+  if (vd.readyState < 2) return false;
+  pctx.drawImage(vd, 0, 0, cols, rows);
+  return true;
+}
+function paintFrame(t) {                          // 读第 t 秒这一帧，亮的地方用密的字
+  if (!drawSource(t)) return false;
   const cv0 = canvasOf(filmCards[0]);
   master.width = cv0.width; master.height = cv0.height;
-  pctx.imageSmoothingQuality = "high";
-  pctx.drawImage(vd, 0, 0, cols, rows);
   const d = pctx.getImageData(0, 0, cols, rows).data;
   const ctx = master.getContext("2d");
   ctx.clearRect(0, 0, master.width, master.height);
@@ -365,6 +377,7 @@ function paintFrame() {                           // 读小视频当前这一帧
       c2.clearRect(0, 0, cv.width, cv.height); c2.drawImage(master, 0, 0);
     }
   }
+  return true;
 }
 // 效果一：画面钉在屏幕正中不动，每条评论的配图框只露出跟画面重叠的那一截，像隔着往上卷的百叶窗看
 function paintBlinds(off) {
@@ -383,6 +396,17 @@ function paintBlinds(off) {
 // ================= 音视频：直接写地址；打开页面就在后台各请求一遍，存进浏览器缓存 =================
 vd.src = "luma.mp4"; au.src = "audio.m4a";
 for (const u of ["luma.mp4", "audio.m4a"]) fetch(u).catch(() => {});
+
+// 微信不让小视频自己动起来，改用"印样"：每一帧缩成 120x34 的小格，480 格拼一张图，一共 3 张（make_sheets.py 生成）
+// 网址加 ?sheet 可以在电脑上强制用这种方式测试；别的地方视频没动起来也会自动切过来
+const SHEET = {cols: 120, rows: 34, per: 480, gx: 16, n: 3, fps: 15, frames: 1401};
+let useSheets = /MicroMessenger/i.test(navigator.userAgent) || new URLSearchParams(location.search).has("sheet");
+const sheetImgs = [];
+function loadSheets() {
+  if (sheetImgs.length) return;
+  for (let i = 0; i < SHEET.n; i++) { const im = new Image(); im.src = `sheets/s${i}.webp`; sheetImgs.push(im); }
+}
+if (useSheets) loadSheets();
 
 // ================= 刷新也记得：看到哪、有没有中招、视频播到哪 =================
 let mode = "free", flyVT0 = 0;            // flyVT0：车轮效应从视频第几秒开始算（刷新后接着用）
@@ -447,13 +471,18 @@ function launch() {
   const step = t => {
     const k = Math.min(1, (t - t0) / 220);
     wrap.style.transform = `translateY(${-(from + (filmOffset - from) * k * k)}px)`;
-    if (k < 1) requestAnimationFrame(step); else { arriving = false; flyT0 = performance.now(); flyVT0 = vd.currentTime; }   // 拽到位了，效果从这一刻开始算
+    if (k < 1) requestAnimationFrame(step); else { arriving = false; flyT0 = performance.now(); flyVT0 = clock(); }   // 拽到位了，效果从这一刻开始算
   };
   requestAnimationFrame(step);
 }
 
 // ================= 放映 =================
-let audioOn = false, playing = false, startAt = 0, lastSave = 0;
+let audioOn = false, playing = false, startAt = 0, lastSave = 0, playT0 = 0;
+function clock() {                                 // 现在该放到第几秒
+  if (audioOn && (useSheets || !au.paused)) return au.currentTime;
+  if (!useSheets) return vd.currentTime;
+  return startAt + (performance.now() - playT0) / 1000;
+}
 function startFilm(t) {
   mode = "film"; startAt = t;
   save({t, mode: "film"});
@@ -465,9 +494,10 @@ function seek(m, t) {                              // 元数据没到时设 curr
 }
 function beginPlayback() {
   playing = true;
+  playT0 = performance.now();
   vd.muted = true; au.muted = false;
-  seek(vd, startAt); seek(au, startAt);
-  vd.play().catch(() => {});
+  seek(au, startAt);
+  if (!useSheets) { seek(vd, startAt); vd.play().catch(() => {}); }
   au.play().then(() => { audioOn = true; }).catch(() => {});   // 声音和画面同时直接开
 }
 au.addEventListener("pause", () => {               // 被系统或缓冲打断就自动续上
@@ -512,15 +542,19 @@ function flyOffset(t) {                           // 字符画区域在开播位
 function film() {
   if (mode !== "film") return;
   if (!playing) { beginPlayback(); setupFx(); }
-  if (audioOn && !au.paused && Math.abs(vd.currentTime - au.currentTime) > 0.2) vd.currentTime = au.currentTime;
-  if (vd.readyState >= 2 && vd.currentTime > 0 && vd.currentTime !== lastVT) { lastVT = vd.currentTime; paintFrame(); }
+  if (!useSheets && audioOn && !au.paused && Math.abs(vd.currentTime - au.currentTime) > 0.2) vd.currentTime = au.currentTime;
+  // 视频被拦住了（开播 1.5 秒还没动）：换成印样
+  if (!useSheets && performance.now() - playT0 > 1500 && vd.currentTime < 0.05) { useSheets = true; loadSheets(); vd.pause(); }
+  const t = clock();
+  const key = useSheets ? Math.floor(t * SHEET.fps) : vd.currentTime;
+  if (t > 0 && key !== lastVT && paintFrame(t)) lastVT = key;
   if (FX && !arriving) {
-    const off = flyOffset(vd.currentTime);
+    const off = flyOffset(t);
     wrap.style.transform = `translateY(${-(filmOffset + off)}px)`;
-    if (FX === 1 && lastVT >= 0) paintBlinds(off);
+    if (FX === 1 && lastVT !== -1) paintBlinds(off);
   }
-  if (Date.now() - lastSave > 400) { lastSave = Date.now(); save({t: audioOn && !au.paused ? au.currentTime : vd.currentTime}); }
-  if (vd.ended || au.ended) return finish();
+  if (Date.now() - lastSave > 400) { lastSave = Date.now(); save({t}); }
+  if (au.ended || t >= (C.duration || 93.4) - 0.05 || (!useSheets && vd.ended)) return finish();
   requestAnimationFrame(film);
 }
 function finish() {                                // 播完：停在最后一格，放开页面，可以接着往下滑
@@ -546,8 +580,13 @@ if (saved && saved.mode === "done") {
   filmOffset = topIn($("film0")) - 6;
   mode = "done";
   scrollTo(0, filmOffset);
-  vd.addEventListener("loadeddata", () => { vd.currentTime = Math.max(0, vd.duration - 0.1); }, {once: true});
-  vd.addEventListener("seeked", () => paintFrame(), {once: true});
+  if (useSheets) {
+    const last = sheetImgs[SHEET.n - 1], show = () => paintFrame((C.duration || 93.4) - 0.1);
+    last.complete ? show() : last.addEventListener("load", show, {once: true});
+  } else {
+    vd.addEventListener("loadeddata", () => { vd.currentTime = Math.max(0, vd.duration - 0.1); }, {once: true});
+    vd.addEventListener("seeked", () => paintFrame(vd.currentTime), {once: true});
+  }
 } else if (saved && saved.mode === "free" && saved.y) {
   scrollTo(0, saved.y); lastY = scrollY;
   addEventListener("load", () => { if (mode === "free") { scrollTo(0, saved.y); lastY = scrollY; } }, {once: true});
@@ -557,13 +596,13 @@ if (saved && saved.mode === "done") {
 // 微信：在它的官方事件里先把视频和声音"暖"一下；刷新后正在播的话，借这个机会把声音接上
 function tryAudio() {
   if (mode === "film" && playing && !audioOn) {
-    au.currentTime = vd.currentTime;
+    au.currentTime = clock();
     au.play().then(() => { audioOn = true; }).catch(() => {});
   }
 }
 function wxReady() {
   if (mode === "free") {
-    for (const m of [vd, au]) { m.muted = true; m.play().then(() => { m.pause(); m.currentTime = 0; if (m === au) m.muted = false; }).catch(() => {}); }
+    for (const m of useSheets ? [au] : [vd, au]) { m.muted = true; m.play().then(() => { m.pause(); m.currentTime = 0; if (m === au) m.muted = false; }).catch(() => {}); }
   } else tryAudio();
 }
 if (window.WeixinJSBridge) wxReady(); else document.addEventListener("WeixinJSBridgeReady", wxReady);
