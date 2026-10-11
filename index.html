@@ -14,12 +14,18 @@ html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-sys
 body.held{overflow:hidden;height:100%}
 body.held #wrap{position:fixed;top:0;left:0;right:0;will-change:transform}
 
-/* 专栏文章 */
-.art{padding:24px 0 20px}
-.art h1{font-size:24px;line-height:1.45;margin:0 0 16px;font-weight:600}
-.au{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--sub);margin-bottom:18px}
-.au .av{width:36px;height:36px}.au b{color:var(--pink);font-weight:500;font-size:14px}
-.art p{margin:0;font-size:17px;line-height:1.9}
+/* 专栏文章：通栏封面 + 标题 + 作者行 + 话题 + 正文 */
+.art{padding:0 0 22px}
+.cover{display:block;width:calc(100% + 32px);margin:0 -16px 20px;aspect-ratio:16/9;object-fit:cover;background:var(--soft)}
+.art h1{font-size:20px;line-height:1.5;margin:0 0 14px;font-weight:700}
+.au{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.au .av{width:36px;height:36px}
+.au .who{flex:1;display:flex;flex-direction:column;line-height:1.4}
+.au .who b{font-size:14px;font-weight:600;color:var(--fg)}.au .who span{font-size:12px;color:var(--sub)}
+.au .dots{font-style:normal;color:var(--sub);font-size:18px;padding:0 4px;cursor:pointer}
+.topic{display:inline-flex;align-items:center;gap:4px;font-size:14px;color:var(--at);margin-bottom:10px;cursor:pointer}
+.topic i{display:inline-block;width:14px;height:14px;border-radius:50%;background:var(--at);color:#fff;font:700 10px/14px sans-serif;text-align:center;font-style:normal}
+.art p{margin:0;font-size:16px;line-height:1.8}
 
 /* 评论区头部 */
 .chead{display:flex;align-items:center;padding:22px 0 18px}
@@ -89,11 +95,18 @@ body.held #wrap{position:fixed;top:0;left:0;right:0;will-change:transform}
 .film .head{height:22px;display:flex;align-items:center}
 .shot{display:inline-block;background:#101012;border-radius:8px;padding:8px 6px;margin-top:6px}
 .shot canvas{display:block}
+/* 效果二：一张固定在屏幕正中的字符画评论，后面的评论在飞 */
+#pin{display:none;position:fixed;left:0;right:0;z-index:15;pointer-events:none}
+#pin .film{max-width:780px;margin:0 auto;padding:12px 16px;box-sizing:border-box;background:var(--bg);border:0;
+  box-shadow:0 0 24px 12px var(--bg)}
+.film.blur{filter:url(#vblur)}
 </style>
 </head>
 <body>
 <div id="wrap"></div>
 <div id="dock"></div>
+<div id="pin"></div>
+<svg width="0" height="0" style="position:absolute"><filter id="vblur"><feGaussianBlur stdDeviation="0 6"/></filter></svg>
 <audio id="au" preload="auto" playsinline></audio>
 <!-- 每格明暗存成的小黑白视频，只拿来读像素。不能 display:none，苹果手机对隐藏的视频不解码画面 -->
 <video id="vd" preload="auto" muted playsinline webkit-playsinline x5-playsinline x5-video-player-type="h5-page"
@@ -106,7 +119,9 @@ const CHAR_PX = (devicePixelRatio || 1) >= 2 ? 2.5 : 4;   // 一个字多宽（�
 const SRC_RATIO = 84 / 300;                      // 小视频是 300 x 84 格
 const FONT = "Consolas,Menlo,'Roboto Mono','Droid Sans Mono',monospace";
 const FILM_CARDS = 7;                            // 字符画评论叠几条（盖满一屏再多一点）
-const KEY = "wlkc-state";                        // 刷新也记得的状态
+const KEY = "wlkc-state";
+// 放映时的"飞快往下刷"效果：0 = 原地不动；1 = 百叶窗；2 = 上下两头在飞；3 = 画面跟着跳。网址后面加 ?fx=1 可以临时切换
+const FX = +(new URLSearchParams(location.search).get("fx") ?? "") || (CONTENT.fx || 0);                        // 刷新也记得的状态
 const $ = id => document.getElementById(id);
 const au = $("au"), vd = $("vd"), wrap = $("wrap");
 const C = CONTENT;
@@ -182,9 +197,10 @@ const card = i => `<div class="film" ${i === 0 ? 'id="film0"' : ""}>
 // 页面骨架：文章 → 评论区头 → 普通评论（可排序）→ 魔性文案和字符画（永远在最后）
 const A = C.article;
 wrap.innerHTML =
-  `<div class="art"><h1>${esc(A.title)}</h1>
-     <div class="au">${av(A.author)}<b>${esc(A.author)}</b><span>${A.time}</span><span>${A.views}阅读</span></div>
-     <p>${esc(A.text)}</p></div>
+  `<div class="art">${A.cover ? `<img class="cover" src="${A.cover}" alt="">` : ""}<h1>${esc(A.title)}</h1>
+     <div class="au">${av(A.author, A.vip)}<div class="who"><b>${esc(A.author)}</b><span>${esc(A.time)}</span></div><i class="dots">⋮</i></div>
+     ${A.topic ? `<div class="topic"><i>#</i>${esc(A.topic)}</div>` : ""}
+     <p>${rich(A.text)}</p></div>
    <div class="chead"><h2>评论</h2><span class="cnt">${C.totalComments}</span>
      <span class="sort on" data-s="hot">最热</span><i></i><span class="sort" data-s="new">最新</span></div>
    <div class="cbox" id="topbox">${av(C.me.name, C.me.vip)}<div class="input"><textarea placeholder="${esc(C.me.placeholder)}"></textarea><button>发布</button></div></div>
@@ -292,7 +308,7 @@ document.addEventListener("click", e => {
     } else {                                       // 发主评论（底部栏发的也一样），发完回到评论区顶部看到自己那条
       mine.unshift({name: C.me.name, lv: C.me.lv, vip: C.me.vip, text, likes: 0, time: "刚刚", replies: []});
       ta.value = ""; btn.classList.remove("ok"); renderList();
-      if (box.closest("#dock")) scrollTo(0, $("list").offsetTop - 80);
+      if (box.closest("#dock")) scrollTo(0, topIn($("list")) - 80);
     }
     return;
   }
@@ -306,8 +322,9 @@ document.addEventListener("input", e => {
 // ================= 字符画评论 =================
 const filmCards = [...document.querySelectorAll(".film")];
 const canvasOf = c => c.querySelector("canvas");
+const topIn = el => el.getBoundingClientRect().top - wrap.getBoundingClientRect().top;   // 元素离整页顶端多远
 const px = document.createElement("canvas"), pctx = px.getContext("2d", {willReadFrequently: true});
-let cols, rows, cellW, font;
+let cols, rows, cellW, font, period = 300, canvasTop0 = 0, pinCanvas = null;
 function layoutFilm() {                           // 配图铺满整行
   const dpr = devicePixelRatio || 1;
   const w = filmCards[0].clientWidth - 12;
@@ -320,27 +337,47 @@ function layoutFilm() {                           // 配图铺满整行
     cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
   }
   cellW = CHAR_PX * dpr;
+  period = topIn(filmCards[1]) - topIn(filmCards[0]);         // 一条字符画评论有多高
+  canvasTop0 = topIn(canvasOf(filmCards[0]));
   const ctx = canvasOf(filmCards[0]).getContext("2d");
   ctx.font = "100px " + FONT;
   font = 100 * cellW / ctx.measureText("M").width + "px " + FONT;
 }
 let lastVT = -1;
+const master = document.createElement("canvas");  // 当前这一格字符画先画在这张"底片"上
 function paintFrame() {                           // 读小视频当前这一帧，亮的地方用密的字
+  const cv0 = canvasOf(filmCards[0]);
+  master.width = cv0.width; master.height = cv0.height;
   pctx.imageSmoothingQuality = "high";
   pctx.drawImage(vd, 0, 0, cols, rows);
   const d = pctx.getImageData(0, 0, cols, rows).data;
-  const cv0 = canvasOf(filmCards[0]), ctx = cv0.getContext("2d");
-  ctx.clearRect(0, 0, cv0.width, cv0.height);
+  const ctx = master.getContext("2d");
+  ctx.clearRect(0, 0, master.width, master.height);
   ctx.fillStyle = INK; ctx.font = font; ctx.textBaseline = "middle";
   for (let y = 0; y < rows; y++) {
     let line = "";
     for (let x = 0; x < cols; x++) line += RAMP[Math.min(9, d[(y * cols + x) * 4] * 10 >> 8)];
     ctx.fillText(line, 0, (y + 0.5) * cellW * 2);
   }
-  for (const c of filmCards.slice(1)) {           // 其余几条照抄第一条，整屏一致
-    const cv = canvasOf(c), c2 = cv.getContext("2d");
-    c2.clearRect(0, 0, cv.width, cv.height); c2.drawImage(cv0, 0, 0);
+  if (FX !== 1) {                                 // 效果一要按位置裁着画，在 film() 里每次刷新单独画
+    for (const c of filmCards.concat(pinCanvas ? [pinCanvas.parentElement.parentElement] : [])) {
+      const cv = canvasOf(c), c2 = cv.getContext("2d");
+      c2.clearRect(0, 0, cv.width, cv.height); c2.drawImage(master, 0, 0);
+    }
   }
+}
+// 效果一：画面钉在屏幕正中不动，每条评论的配图框只露出跟画面重叠的那一截，像隔着往上卷的百叶窗看
+function paintBlinds(off) {
+  const dpr = devicePixelRatio || 1;
+  const cssH = parseFloat(canvasOf(filmCards[0]).style.height);
+  const fixedTop = (innerHeight - cssH) / 2;      // 画面在屏幕上的固定位置
+  filmCards.forEach((c, i) => {
+    const cv = canvasOf(c), c2 = cv.getContext("2d");
+    const screenTop = canvasTop0 + i * period - (filmOffset + off);
+    c2.clearRect(0, 0, cv.width, cv.height);
+    const dy = (fixedTop - screenTop) * dpr;
+    if (Math.abs(dy) < cv.height) c2.drawImage(master, 0, dy);
+  });
 }
 
 // ================= 音视频：直接写地址；打开页面就在后台各请求一遍，存进浏览器缓存 =================
@@ -348,10 +385,10 @@ vd.src = "luma.mp4"; au.src = "audio.m4a";
 for (const u of ["luma.mp4", "audio.m4a"]) fetch(u).catch(() => {});
 
 // ================= 刷新也记得：看到哪、有没有中招、视频播到哪 =================
-let mode = "free";
+let mode = "free", flyVT0 = 0;            // flyVT0：车轮效应从视频第几秒开始算（刷新后接着用）
 function save(extra = {}) {
   try {
-    sessionStorage.setItem(KEY, JSON.stringify(Object.assign({mode, sortBy, y: mode === "free" ? scrollY : 0, at: Date.now()}, extra)));
+    sessionStorage.setItem(KEY, JSON.stringify(Object.assign({mode, sortBy, y: mode === "free" ? scrollY : 0, at: Date.now(), flyAt: flyVT0}, extra)));
   } catch (e) {}
 }
 let saved = null;
@@ -367,7 +404,7 @@ let lastY = scrollY, armed = false, saveT = 0;
 addEventListener("scroll", () => {
   if (mode !== "free") return;
   const y = scrollY, dy = y - lastY;
-  const boostTop = $("fill0").offsetTop - innerHeight, film = $("film0").offsetTop;
+  const boostTop = topIn($("fill0")) - innerHeight, film = topIn($("film0"));
   if (dy > 0 && y > boostTop) {
     const u = Math.min(1, (y - boostTop) / (film - boostTop));
     const extra = dy * C.boostMax * u * u;
@@ -392,7 +429,7 @@ addEventListener("touchmove", block, {passive: false});
 addEventListener("keydown", e => { if ((mode === "auto" || mode === "film") && e.target.tagName !== "TEXTAREA") e.preventDefault(); });
 
 // 一下子拽到字符画那里（0.22 秒，越来越快），同时开播
-let filmOffset = 0;
+let filmOffset = 0, arriving = false;
 function hold(at) {
   document.body.classList.add("held");
   scrollTo(0, 0);
@@ -403,13 +440,14 @@ function launch() {
   $("dock").classList.remove("show");
   const from = scrollY;
   hold(from);
-  filmOffset = $("film0").offsetTop - 6;
+  filmOffset = topIn($("film0")) - 6;
   const t0 = performance.now();
+  arriving = true;
   startFilm(0);
   const step = t => {
     const k = Math.min(1, (t - t0) / 220);
     wrap.style.transform = `translateY(${-(from + (filmOffset - from) * k * k)}px)`;
-    if (k < 1) requestAnimationFrame(step);
+    if (k < 1) requestAnimationFrame(step); else { arriving = false; flyT0 = performance.now(); flyVT0 = vd.currentTime; }   // 拽到位了，效果从这一刻开始算
   };
   requestAnimationFrame(step);
 }
@@ -435,11 +473,52 @@ function beginPlayback() {
 au.addEventListener("pause", () => {               // 被系统或缓冲打断就自动续上
   if (playing && !au.ended) setTimeout(() => au.play().catch(() => {}), 60);
 });
+let flyT0 = 0;
+function setupFx() {                              // 开播时按效果摆好场子
+  layoutFilm();
+  flyT0 = performance.now();
+  if (FX === 2) {                                 // 复制一条字符画评论钉在屏幕正中，拖影只加在后面飞的那些上
+    const pin = $("pin");
+    pin.innerHTML = filmCards[0].outerHTML.replace('id="film0"', "");
+    pinCanvas = canvasOf(pin);
+    const src = canvasOf(filmCards[0]);
+    pinCanvas.width = src.width; pinCanvas.height = src.height;
+    pinCanvas.style.width = src.style.width; pinCanvas.style.height = src.style.height;
+    pin.style.display = "block";
+    pin.style.top = (innerHeight - pin.offsetHeight) / 2 + "px";
+    filmCards.forEach(c => c.classList.add("blur"));
+  }
+}
+function flyOffset(t) {                           // 字符画区域在开播位置基础上又往下滚了多少
+  if (FX === 1 || FX === 2) return ((performance.now() - flyT0) / 1000 * (C.flySpeed || 1800)) % period;
+  if (FX === 4) {                                 // 车轮效应：先像在往下退，再变成慢慢往上爬，同时轻轻跳
+    const s = Math.max(0, t - flyVT0), T = C.wheelSettle || 2;     // 按视频播到哪算，刷新后不会重演倒转
+    const down = -(C.wheelDown || 500), up = C.wheelUp || 45;      // 看起来的速度（像素/秒），负数是往下
+    // 过渡曲线 k：2 秒内从 1 降到 0，先快后慢（三次方缓出）。速度和轻跳幅度都跟着它走
+    const p = Math.min(1, s / T), k = Math.pow(1 - p, 3);
+    // 速度 v = up + (down - up)·k，下面是它从开播到现在累计走了多远
+    const phase = up * s + (down - up) * (T / 4) * (1 - Math.pow(1 - p, 4));
+    const base = +(new URLSearchParams(location.search).get("jump") || C.wheelJump || 0.01);
+    const size = base + ((C.wheelJumpReverse || 0.02) - base) * k;          // 倒转时 0.020，稳定后 0.010
+    const jump = (t * (C.jumpRate || 15)) % 1 * period * size;
+    return ((phase % period) + period) % period + jump;
+  }
+  if (FX === 3) {                                 // 每一格往上滑一段再跳回；网址加 &jump=0.1 可以临时改幅度
+    const size = +(new URLSearchParams(location.search).get("jump") || C.jumpSize || 0.12);
+    return (t * (C.jumpRate || 15)) % 1 * period * size;
+  }
+  return 0;
+}
 function film() {
   if (mode !== "film") return;
-  if (!playing) beginPlayback();
+  if (!playing) { beginPlayback(); setupFx(); }
   if (audioOn && !au.paused && Math.abs(vd.currentTime - au.currentTime) > 0.2) vd.currentTime = au.currentTime;
   if (vd.readyState >= 2 && vd.currentTime > 0 && vd.currentTime !== lastVT) { lastVT = vd.currentTime; paintFrame(); }
+  if (FX && !arriving) {
+    const off = flyOffset(vd.currentTime);
+    wrap.style.transform = `translateY(${-(filmOffset + off)}px)`;
+    if (FX === 1 && lastVT >= 0) paintBlinds(off);
+  }
   if (Date.now() - lastSave > 400) { lastSave = Date.now(); save({t: audioOn && !au.paused ? au.currentTime : vd.currentTime}); }
   if (vd.ended || au.ended) return finish();
   requestAnimationFrame(film);
@@ -447,6 +526,8 @@ function film() {
 function finish() {                                // 播完：停在最后一格，放开页面，可以接着往下滑
   mode = "done"; playing = false;
   au.pause(); vd.pause();
+  $("pin").style.display = "none"; filmCards.forEach(c => c.classList.remove("blur"));
+  if (FX === 1 && master.width) filmCards.forEach(c => { const cv = canvasOf(c); cv.getContext("2d").drawImage(master, 0, 0); });
   document.body.classList.remove("held");
   wrap.style.transform = "";
   scrollTo(0, filmOffset);
@@ -457,12 +538,12 @@ function finish() {                                // 播完：停在最后一�
 if (saved && (saved.mode === "film" || saved.mode === "auto")) {
   $("dock").classList.remove("show");
   const t = (saved.t || 0) + (Date.now() - saved.at) / 1000;      // 刷新那一两秒也算进去，像没停过
-  filmOffset = $("film0").offsetTop - 6;
-  if (t < (C.duration || 93) - 0.5) { mode = "auto"; hold(filmOffset); startFilm(t); }
+  filmOffset = topIn($("film0")) - 6;
+  if (t < (C.duration || 93) - 0.5) { mode = "auto"; flyVT0 = saved.flyAt ?? 0.25; hold(filmOffset); startFilm(t); }
   else saved = {mode: "done"};
 }
 if (saved && saved.mode === "done") {
-  filmOffset = $("film0").offsetTop - 6;
+  filmOffset = topIn($("film0")) - 6;
   mode = "done";
   scrollTo(0, filmOffset);
   vd.addEventListener("loadeddata", () => { vd.currentTime = Math.max(0, vd.duration - 0.1); }, {once: true});
