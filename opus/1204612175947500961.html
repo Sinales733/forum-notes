@@ -188,7 +188,11 @@ const allCopy = (COPY1 + COPY2).replace(/\s/g, "");
 let seed = 7; const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
 const fills = C.fillSteps.map((r, i) => {
   const len = 60 + i * 80, start = Math.floor(rnd() * (allCopy.length - len));
-  const s = [...allCopy.slice(start, start + len)].map(ch => rnd() < r ? C.fillChar : ch).join("");
+  // 按比例 r 把文案换成一句句"你中了啊……"：每一步要么写一整句，要么照抄一个字
+  const src = [...allCopy.slice(start, start + len)], L = [...C.fillChar].length;
+  const q = r >= 1 ? 1 : r / (L * (1 - r) + r);   // 让最后被替换掉的比例正好是 r
+  let s = "";
+  for (let k = 0; k < src.length;) { if (rnd() < q) { s += C.fillChar; k += L; } else s += src[k++]; }
   return {name: ["一只小柚o", C.launch.name][i % 2], lv: 5, likes: Math.floor(rnd() * 900), time: "刚刚", text: s};
 });
 const card = i => `<div class="film" ${i === 0 ? 'id="film0"' : ""}>
@@ -210,7 +214,6 @@ wrap.innerHTML =
      fills.map((c, i) => comment(c, i === 0 ? {id: "fill0"} : {})).join("") +
      (C.preFilm ? comment(C.preFilm) : "") +
      Array.from({length: FILM_CARDS}, (_, i) => card(i)).join("") +
-     comment(C.outro) +
   `</div>`;
 document.title = A.title;
 $("dock").innerHTML = `<div class="cbox">${av(C.me.name, C.me.vip)}<div class="input"><textarea placeholder="${esc(C.me.placeholder)}"></textarea><button>发布</button></div></div>`;
