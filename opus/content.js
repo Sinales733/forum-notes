@@ -117,7 +117,7 @@ const CONTENT = {
         { name: "我不是雷军已被占用", lv: 5, likes: 1, time: "2026-10-08 21:33", text: "那兄弟你谈吗[doge]" },
         { name: "雾隐岚山", lv: 5, likes: 1, time: "2026-10-10 02:20", text: "居然能做到这个地步…我大概永远都不会忘记你吧！" },
       ] },
-    { name: "轻寂", lv: 5, likes: 513, time: "2026-08-08 21:31", upLiked: true,
+    { name: "轻寂", lv: 5, likes: 513, time: "2026-08-08 21:31",
       text: "纯圈外人不懂，谁能告诉我在2018年12月24日，北纬35度41分，东经139度42分，充满咒灵废墟的战场，最强与最强的对决，当时日本东京新宿区发生了什么？",
       replies: [] },
     { name: "米是米饭的米", lv: 6, vip: true, likes: 410, time: "2026-09-01 02:16",
@@ -160,7 +160,7 @@ const CONTENT = {
     { name: "Hades_KcPd", lv: 6, likes: 0, time: "9分钟前",
       text: "五条悟就像关羽，输得连个全尸都保不住，但是粉丝一定要从其他方面找补，痛骂对面不道德➕贷款", replies: [] },
     // 椅子楼：带图主评论 + 楼中楼里的第一段文案
-    { name: "九头蛇龙", lv: 4, likes: 4353, time: "2026-08-10 19:29", upLiked: true, image: "pics/stool.jpg",
+    { name: "九头蛇龙", lv: 4, likes: 4353, time: "2026-08-10 19:29", image: "pics/stool.jpg",
       text: "评论区一直在那发咒术回战故事的累不累啊，你们不累我都嫌累。[叹气]\n唉，这怎么有个椅子啊，刚好坐下歇歇[大笑]",
       replies: [
         { name: "一只小柚o", lv: 5, likes: 2117, time: "2026-08-10 21:29", text: COPY1 },
