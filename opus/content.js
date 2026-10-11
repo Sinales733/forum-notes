@@ -44,7 +44,7 @@ const CONTENT = {
     title: "【新宿决战】现代最强vs史上最强",
     author: "番剧补完计划", lv: 6, vip: true, time: "2026年10月09日 20:11",
     topic: "新宿决战",                         // 标题下面那个蓝色话题标签
-    text: "你中了啊，『无量空处』",
+    text: "你中了啊……『无量空处』",
   },
   totalComments: 4127,
   // 普通评论（照原帖截图录入，昵称换成了同风格的假名）。"最热"按这里的顺序，"最新"按时间；椅子楼放最后，紧接着就是魔性文案
@@ -240,6 +240,8 @@ const CONTENT = {
   wheelSettle: 2,                             // 从倒转过渡到正转用几秒（先快后慢）
   wheelJump: 0.010,                           // 稳定后轻轻跳的幅度（一条评论高度的几分之几）
   wheelJumpReverse: 0.020,                    // 倒转时的跳动幅度，跟着过渡曲线回落到上面那个数
+  // 字符画开播前最后一条评论（UP 主本人发的）
+  preFilm: { name: "番剧补完计划", lv: 6, vip: true, likes: 0, time: "刚刚", text: "你中了啊……『无量空处』", replies: [] },
   // 播完以后页面放开，接着往下滑能看到这条收尾评论
   outro: { name: "椅子收藏家_", lv: 5, likes: 6666, time: "刚刚", rcount: 520, text: "坐好了吗[doge]",
     replies: [

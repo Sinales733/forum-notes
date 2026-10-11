@@ -208,6 +208,7 @@ wrap.innerHTML =
    <div id="tail">` +
      comment(C.launch, {id: "trap"}) +
      fills.map((c, i) => comment(c, i === 0 ? {id: "fill0"} : {})).join("") +
+     (C.preFilm ? comment(C.preFilm) : "") +
      Array.from({length: FILM_CARDS}, (_, i) => card(i)).join("") +
      comment(C.outro) +
   `</div>`;
