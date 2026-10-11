@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>专栏</title>
+<style>
+:root{--bg:#fff;--fg:#18191c;--sub:#9499a0;--line:#e3e5e7;--name:#61666d;--ink:#18191c;--soft:#f6f7f8}
+.dark{--bg:#17181a;--fg:#e3e5e7;--sub:#757a81;--line:#2c2e31;--name:#a2a7ae;--ink:#e8e8e8;--soft:#202124}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.75 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;overflow-anchor:none}
+#wrap{max-width:760px;margin:0 auto;padding:0 16px;background:var(--bg)}
+body.held{overflow:hidden;height:100%}
+body.held #wrap{position:fixed;top:0;left:0;right:0;will-change:transform}
+.art{padding:22px 0 18px;border-bottom:1px solid var(--line)}
+.art h1{font-size:24px;line-height:1.4;margin:0 0 14px}
+.au{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--sub);margin-bottom:16px}
+.au b{color:#fb7299;font-weight:normal;font-size:14px}
+.art p{margin:0;font-size:16px;line-height:1.85}
+.ch{display:flex;align-items:baseline;gap:18px;padding:18px 0 6px}
+.ch h2{font-size:18px;margin:0}.ch h2 small{font-size:13px;color:var(--sub);font-weight:normal;margin-left:6px}
+.ch span{font-size:13px;color:var(--sub)}.ch span.on{color:var(--fg)}
+.av{flex:none;border-radius:50%;object-fit:cover;background:var(--soft)}
+.cm{display:flex;gap:14px;padding:16px 0 12px;border-bottom:1px solid var(--line)}
+.cm>.av{width:40px;height:40px;line-height:40px;font-size:16px}
+.cm .main{flex:1;min-width:0}
+.nm{font-size:13px;color:var(--name);display:flex;align-items:center;gap:5px}
+.lv{font:bold 9px/12px sans-serif;color:#fff;background:#9499a0;border-radius:2px;padding:0 3px}
+.lv.l5{background:#ff6c00}.lv.l6{background:#f04c49}.lv.l4{background:#4ea2f5}.lv.l3{background:#7bcdef}
+.tx{white-space:pre-wrap;word-break:break-all;margin:4px 0 6px}
+.ft{font-size:13px;color:var(--sub);display:flex;gap:18px}
+.rp{margin-top:8px}
+.ri{display:flex;gap:8px;padding:5px 0}
+.ri .av{width:24px;height:24px;line-height:24px;font-size:12px}
+.ri .tx{margin:0}.ri .nm{display:inline-flex;margin-right:6px}
+.ri .ft{margin-top:2px}
+.more{font-size:13px;color:var(--sub);padding:4px 0 0 32px;cursor:pointer;user-select:none}.more b{margin:0 2px}.more .cur{color:#00aeec}.more b{color:#00aeec;font-weight:normal}
+.film canvas{display:block;margin:6px 0 8px}
+.at{color:#008ac5}
+.pic{display:block;max-width:240px;width:60%;border-radius:6px;margin:4px 0 8px}
+</style>
+</head>
+<body>
+<div id="wrap"></div>
+<audio id="au" src="audio.m4a" preload="auto" playsinline></audio>
+<!-- 每格明暗存成的小黑白视频，只拿来读像素。不能 display:none，苹果手机对隐藏的视频不解码画面 -->
+<video id="vd" src="luma.mp4" preload="auto" muted playsinline webkit-playsinline x5-playsinline x5-video-player-type="h5-page"
+  style="position:fixed;left:0;bottom:0;width:2px;height:2px;opacity:0.01;pointer-events:none"></video>
+<script src="content.js"></script>
+<script>
+const RAMP = " .:-=+*#%@";
+const CHAR_PX = 4;              // 字符画里一个字多宽（像素），越小越细腻、越难看清是字
+const FONT = "Consolas,Menlo,'Roboto Mono','Droid Sans Mono',monospace";
+const $ = id => document.getElementById(id);
+const au = $("au"), vd = $("vd"), wrap = $("wrap");
+const C = CONTENT;
+if (C.theme === "dark") document.documentElement.classList.add("dark");
+
+// ---------- 搭页面 ----------
+const EMO = {"笑哭": "😂", "doge": "🐶", "大笑": "😆", "吃瓜": "🍉", "捂脸": "🤦", "微笑": "🙂", "辣眼睛": "🙈", "妙啊": "👍"};
+const esc = s => s.replace(/[&<>]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c]));
+const rich = s => esc(s).replace(/\[([^\]]{1,4})\]/g, (m, k) => EMO[k] || m)
+                        .replace(/^回复 (@[^ :：]+) ?[:：]/, '回复 <span class="at">$1</span> :');
+const COLORS = ["#f2a07b", "#7bb3f2", "#a07bf2", "#7bd8a0", "#f27ba8", "#d8c27b", "#8fa3b8"];
+const avColor = n => COLORS[[...n].reduce((a, ch) => a + ch.charCodeAt(0), 0) % COLORS.length];
+const AVATARS = 40;              // avatars 文件夹里 a0.jpg ~ a39.jpg，按名字固定分配
+const avIdx = n => [...n].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 9973, 7) % AVATARS;
+const av = n => `<img class="av" src="avatars/a${avIdx(n)}.jpg" alt="">`;
+const nm = (n, lv) => `<span class="nm">${esc(n)}<i class="lv l${lv || 3}">LV${lv || 3}</i></span>`;
+
+const reply = (r, time) => `<div class="ri">${av(r.name)}<div>
+      <div class="tx">${nm(r.name, r.lv)}${rich(r.text)}</div>
+      <div class="ft"><span>${time || "刚刚"}</span><span>👍 ${r.likes ?? ""}</span><span>回复</span></div></div></div>`;
+
+function comment(c, opts = {}) {
+  const replies = (c.replies || []).map(r => reply(r, c.time)).join("");
+  const more = c.rcount > (c.replies || []).length
+    ? `<div class="more" data-n="${c.rcount}" data-seed="${c.likes}" data-op="${esc(c.name)}" data-preset='${esc(JSON.stringify(c.replies || [])).replace(/'/g, "&#39;")}'>共${c.rcount}条回复, <b>点击查看</b></div>` : "";
+  return `<div class="cm ${opts.cls || ""}" ${opts.id ? `id="${opts.id}"` : ""}>${av(c.name)}<div class="main">
+    ${nm(c.name, c.lv)}${opts.body ?? `<div class="tx">${rich(c.text)}</div>`}${c.image ? `<img class="pic" src="${c.image}">` : ""}
+    <div class="ft"><span>${c.time || "1小时前"}</span><span class="lk">👍 ${c.likes ?? ""}</span><span>回复</span></div>
+    ${replies || more ? `<div class="rp">${replies}${more}</div>` : ""}</div></div>`;
+}
+
+// 过渡评论：拿文案的句子，按比例把字换成同一个字，越往后换得越多、越长
+const allCopy = (COPY1 + COPY2).replace(/\s/g, "");
+let seed = 7; const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
+const fills = C.fillSteps.map((r, i) => {
+  const len = 80 + i * 70, start = Math.floor(rnd() * (allCopy.length - len));
+  const s = [...allCopy.slice(start, start + len)].map(ch => rnd() < r ? C.fillChar : ch).join("");
+  return {name: ["一只小未o", C.launch.name][i % 2], lv: 5, likes: Math.floor(rnd() * 900), time: "刚刚", text: s};
+});
+const FILM_CARDS = 8;           // 字符画评论叠几条（盖满一屏再多一点）
+const A = C.article;
+wrap.innerHTML =
+  `<div class="art"><h1>${esc(A.title)}</h1>
+     <div class="au">${av(A.author).replace('class="av"', 'class="av" style="width:32px;height:32px"')}<b>${esc(A.author)}</b><span>${A.time}</span><span>${A.views} 阅读</span></div>
+     <p>${esc(A.text)}</p></div>
+   <div class="ch"><h2>评论<small>${C.totalComments}</small></h2><span class="on">最热</span><span>最新</span></div>` +
+  C.comments.map(c => comment(c)).join("") +
+  comment(C.launch, {id: "trap"}) +
+  fills.map((c, i) => comment(c, i === 0 ? {id: "fill0"} : {})).join("") +
+  Array.from({length: FILM_CARDS}, (_, i) =>
+    comment({name: C.filmName, lv: 6, likes: 0, time: "刚刚"}, {cls: "film", id: i ? "" : "film0", body: "<canvas></canvas>"})).join("");
+document.title = A.title;
+// ---------- 楼中楼：点"点击查看"展开全部回复，每页 10 条，可以翻页 ----------
+const PER = 10;
+function genReply(seedBase, i, op) {          // 第 i 条回复，同一楼同一位置永远一样
+  let sd = (seedBase * 131 + i * 7919) % 2147483646 + 1;
+  const r = () => (sd = sd * 16807 % 2147483647) / 2147483647;
+  r(); r();
+  const name = C.replyNames[Math.floor(r() * C.replyNames.length)];
+  let text = C.replyPool[Math.floor(r() * C.replyPool.length)];
+  if (r() < 0.35) text = `回复 @${r() < 0.4 ? op : C.replyNames[Math.floor(r() * C.replyNames.length)]} :` + text;
+  const lv = r() < 0.5 ? 6 : r() < 0.7 ? 5 : 2 + Math.floor(r() * 3);
+  const d = 10 - Math.floor(i / 25);
+  return {name, lv, likes: Math.floor(Math.pow(r(), 3) * 800 / (1 + i / 10)), text, time: `10-${String(Math.max(1, d)).padStart(2, "0")}`};
+}
+function showPage(m, page) {
+  const n = +m.dataset.n, pages = Math.ceil(n / PER), seed = +m.dataset.seed || 1;
+  const box = m.parentElement;
+  const preset = JSON.parse(m.dataset.preset || "[]");
+  let html = "";
+  for (let i = page * PER; i < Math.min(n, (page + 1) * PER); i++) {
+    const r = i < preset.length ? preset[i] : genReply(seed, i, m.dataset.op);
+    html += reply(r, r.time || "10-10");
+  }
+  box.querySelectorAll(".ri").forEach(el => el.remove());
+  m.insertAdjacentHTML("beforebegin", html);
+  const nums = [];
+  for (let p = 0; p < pages; p++)
+    if (p < 2 || p >= pages - 1 || Math.abs(p - page) <= 1) nums.push(p);
+    else if (nums[nums.length - 1] !== "…") nums.push("…");
+  m.innerHTML = `共${pages}页 ` + (page > 0 ? `<b data-p="${page - 1}">上一页</b> ` : "") +
+    nums.map(p => p === "…" ? "…" : p === page ? `<span class="cur">${p + 1}</span>` : `<b data-p="${p}">${p + 1}</b>`).join(" ") +
+    (page < pages - 1 ? ` <b data-p="${page + 1}">下一页</b>` : "") + ` <b data-p="close">收起</b>`;
+}
+wrap.addEventListener("click", e => {
+  const m = e.target.closest(".more");
+  if (!m || mode !== "free") return;
+  const p = e.target.dataset.p;
+  if (p === "close") {                                    // 收起：回到最初露出的那几条
+    const box = m.parentElement, preset = JSON.parse(m.dataset.preset || "[]");
+    box.querySelectorAll(".ri").forEach(el => el.remove());
+    m.insertAdjacentHTML("beforebegin", preset.map(r => reply(r, r.time || "10-10")).join(""));
+    m.innerHTML = `共${m.dataset.n}条回复, <b>点击查看</b>`;
+    return;
+  }
+  if (p !== undefined) return showPage(m, +p);
+  if (e.target.tagName === "B") showPage(m, 0);
+});
+const filmCards = [...document.querySelectorAll(".film")];
+const filmLikes = filmCards.map(c => c.querySelector(".lk"));
+
+// ---------- 字符画评论的尺寸 ----------
+const px = document.createElement("canvas"), pctx = px.getContext("2d", {willReadFrequently: true});
+let cols, rows, cellW, period;
+function layoutFilm() {
+  const dpr = devicePixelRatio || 1;
+  const w = filmCards[0].querySelector(".main").clientWidth;
+  const ratio = (vd.videoHeight || 84) / (vd.videoWidth || 300);     // 小视频每格的行列比
+  cols = Math.max(40, Math.floor(w / CHAR_PX)); rows = Math.round(cols * ratio);
+  px.width = cols; px.height = rows;
+  const cssW = cols * CHAR_PX, cssH = rows * CHAR_PX * 2;
+  for (const card of filmCards) {
+    const cv = card.querySelector("canvas");
+    cv.style.width = cssW + "px"; cv.style.height = cssH + "px";
+    cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
+  }
+  cellW = CHAR_PX * dpr;
+  period = filmCards[1].offsetTop - filmCards[0].offsetTop;          // 一条字符画评论的高度
+}
+
+// ---------- 画一格：白底时暗的地方用密的字；黑底反过来 ----------
+let lastVT = -1;
+function drawFrame() {
+  pctx.imageSmoothingQuality = "high";
+  pctx.drawImage(vd, 0, 0, cols, rows);
+  const d = pctx.getImageData(0, 0, cols, rows).data, dark = C.theme === "dark";
+  const cv0 = filmCards[0].querySelector("canvas"), ctx = cv0.getContext("2d");
+  ctx.clearRect(0, 0, cv0.width, cv0.height);
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--ink");
+  ctx.textBaseline = "middle";
+  ctx.font = "100px " + FONT;
+  ctx.font = 100 * cellW / ctx.measureText("M").width + "px " + FONT;
+  for (let y = 0; y < rows; y++) {
+    let row = "";
+    for (let x = 0; x < cols; x++) {
+      const v = Math.min(9, d[(y * cols + x) * 4] * 10 >> 8);
+      row += RAMP[dark ? v : 9 - v];
+    }
+    ctx.fillText(row, 0, (y + 0.5) * cellW * 2);
+  }
+  for (const card of filmCards.slice(1)) {        // 其余几条照抄第一条，保证整屏一致
+    const cv = card.querySelector("canvas"), c2 = cv.getContext("2d");
+    c2.clearRect(0, 0, cv.width, cv.height); c2.drawImage(cv0, 0, 0);
+  }
+}
+
+// ---------- 偷偷测屏幕刷新率（字符画评论的点赞数按它跳） ----------
+let hz = 60;
+{
+  const ts = [];
+  const f = t => { ts.push(t); if (ts.length < 120) return requestAnimationFrame(f);
+    hz = Math.round(1000 / ts.slice(1).map((x, i) => x - ts[i]).sort((a, b) => a - b)[59]); };
+  requestAnimationFrame(f);
+}
+
+// ---------- 全靠对方自己滑；离临界点越近，他每滑一下偷偷多送一段 ----------
+let mode = "free", lastY = scrollY, armed = false;
+addEventListener("scroll", () => {
+  if (mode !== "free") return;
+  const y = scrollY, dy = y - lastY;
+  const boostTop = $("fill0").offsetTop - innerHeight, film = $("film0").offsetTop;
+  if (dy > 0 && y > boostTop) {
+    const u = Math.min(1, (y - boostTop) / (film - boostTop));
+    const extra = dy * C.boostMax * u * u;
+    if (extra >= 1) scrollTo(0, y + extra);
+  }
+  lastY = scrollY;
+  if (lastY >= film) return launch();                       // 惯性直接冲过头了，直接开
+  if (lastY + innerHeight > film + 60) armed = true;          // 字符画评论露头了：到临界点
+}, {passive: true});
+
+// 到了临界点，他再往下动一下就开播
+let touchY = null;
+addEventListener("wheel", e => { if (mode === "free" && armed && e.deltaY > 0) launch(); }, {passive: true});
+addEventListener("touchstart", e => { touchY = e.touches[0].clientY; }, {passive: true});
+addEventListener("touchmove", e => {
+  if (mode === "free" && armed && touchY != null && touchY - e.touches[0].clientY > 8) launch();
+}, {passive: true});
+
+// 开播后不许再滑
+const block = e => { if (mode !== "free") e.preventDefault(); };
+addEventListener("wheel", block, {passive: false});
+addEventListener("touchmove", block, {passive: false});
+addEventListener("keydown", block);
+
+// 一下子拽到字符画那里（0.2 秒，越来越快），然后开播
+function launch() {
+  mode = "auto";
+  const from = scrollY;
+  document.body.classList.add("held");
+  wrap.style.transform = `translateY(${-from}px)`;
+  scrollTo(0, 0);
+  layoutFilm();
+  if (vd.readyState >= 2) drawFrame();
+  const to = $("film0").offsetTop, t0 = performance.now();
+  startFilm();                                   // 声音和画面现在就开始，不等动画
+  const step = t => {
+    const k = Math.min(1, (t - t0) / 200);
+    wrap.style.transform = `translateY(${-(from + (to - from) * k * k)}px)`;
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// ---------- 定住放映：每刷新一次滚过一条，屏幕上看起来就是一条在播的评论 ----------
+let audioOn = false;
+function startFilm() {
+  mode = "film";
+  vd.muted = true; vd.currentTime = 0; au.currentTime = 0; au.muted = false;
+  vd.play().catch(() => {});
+  au.play().then(() => { audioOn = true; }).catch(() => {});   // 声音和画面同时直接开
+  requestAnimationFrame(film);
+}
+function film() {
+  let t = vd.currentTime;
+  if (audioOn && !au.paused) {                 // 有声音就以声音为准
+    t = au.currentTime;
+    if (Math.abs(vd.currentTime - t) > 0.15) vd.currentTime = t;
+  }
+  const passed = Math.floor(t * hz);           // 到现在一共滚过了多少条
+  filmLikes.forEach((el, i) => el.textContent = "👍 " + (passed + i));
+  if (vd.readyState >= 2 && vd.currentTime !== lastVT) { lastVT = vd.currentTime; drawFrame(); }
+  if (!vd.ended) requestAnimationFrame(film);
+}
+
+// 万一浏览器硬拦了声音：画面照放，下一次碰屏幕时从同一位置补上（不是触发条件，只是补救）
+// 微信：在它的官方事件里先把视频和声音"暖"一下，之后才能由页面直接开播
+function wxWarm() {
+  for (const m of [vd, au]) { m.muted = true; m.play().then(() => { m.pause(); m.currentTime = 0; if (m === au) m.muted = false; }).catch(() => {}); }
+}
+if (window.WeixinJSBridge) wxWarm(); else document.addEventListener("WeixinJSBridgeReady", wxWarm);
+addEventListener("pointerdown", () => {
+  if (mode === "film" && !audioOn) { au.currentTime = vd.currentTime; au.play().then(() => { audioOn = true; }).catch(() => {}); }
+}, {capture: true});
+vd.addEventListener("loadeddata", () => { if (mode !== "free") drawFrame(); });
+</script>
+</body>
+</html>
