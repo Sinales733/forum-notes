@@ -395,7 +395,14 @@ function paintBlinds(off) {
 
 // ================= 音视频：直接写地址；打开页面就在后台各请求一遍，存进浏览器缓存 =================
 vd.src = "luma.mp4"; au.src = "audio.m4a";
-for (const u of ["luma.mp4", "audio.m4a"]) fetch(u).catch(() => {});
+fetch("luma.mp4").catch(() => {});
+// 伴奏整首（约 400 KB）下进内存：开播不用等缓冲，网络断了也不会停
+let audioMem = null;
+fetch("audio.m4a").then(r => r.ok ? r.blob() : Promise.reject()).then(b => {
+  audioMem = URL.createObjectURL(b);
+  if (!playing) { au.src = audioMem; au.load(); }                  // 还没开播：直接换成内存里这份
+  else if (!audioOn || au.error) recoverAudio(clock());            // 已经在放但没声音：马上用内存这份接上
+}).catch(() => {});
 
 // 微信不让小视频自己动起来，改用"印样"：每一帧缩成 120x34 的小格，480 格拼一张图，一共 3 张（make_sheets.py 生成）
 // 网址加 ?sheet 可以在电脑上强制用这种方式测试；别的地方视频没动起来也会自动切过来
@@ -478,8 +485,13 @@ function launch() {
 
 // ================= 放映 =================
 let audioOn = false, playing = false, startAt = 0, lastSave = 0, playT0 = 0;
+let lastAuT = -1, lastAuWall = 0;                  // 伴奏上一次往前走是什么时候、走到了哪
 function clock() {                                 // 现在该放到第几秒
-  if (audioOn && (useSheets || !au.paused)) return au.currentTime;
+  if (audioOn && (useSheets || !au.paused)) {
+    const stall = performance.now() - lastAuWall;
+    if (lastAuWall && stall > 300) return lastAuT + stall / 1000;   // 伴奏卡住了：按时间接着往前推
+    return au.currentTime;
+  }
   if (!useSheets) return vd.currentTime;
   return startAt + (performance.now() - playT0) / 1000;
 }
@@ -503,6 +515,14 @@ function beginPlayback() {
 au.addEventListener("pause", () => {               // 被系统或缓冲打断就自动续上
   if (playing && !au.ended) setTimeout(() => au.play().catch(() => {}), 60);
 });
+// 伴奏卡住或出错：换成内存里那份，从该放到的位置接着放
+function recoverAudio(t) {
+  if (!playing || au.ended) return;
+  if (audioMem && au.src !== audioMem) au.src = audioMem;
+  try { au.currentTime = t; } catch (e) {}
+  au.play().then(() => { audioOn = true; }).catch(() => {});
+}
+au.addEventListener("error", () => { if (playing) recoverAudio(clock()); });
 let flyT0 = 0;
 function setupFx() {                              // 开播时按效果摆好场子
   layoutFilm();
@@ -542,7 +562,12 @@ function flyOffset(t) {                           // 字符画区域在开播位
 function film() {
   if (mode !== "film") return;
   if (!playing) { beginPlayback(); setupFx(); }
-  if (!useSheets && audioOn && !au.paused && Math.abs(vd.currentTime - au.currentTime) > 0.2) vd.currentTime = au.currentTime;
+  if (audioOn) {                                  // 盯着伴奏：在走就记下来；0.8 秒没动就接上
+    const now = performance.now();
+    if (au.currentTime !== lastAuT) { lastAuT = au.currentTime; lastAuWall = now; }
+    else if (now - lastAuWall > 800 && !au.ended) { const t0 = clock(); lastAuT = t0; lastAuWall = now; recoverAudio(t0); }
+  }
+  if (!useSheets && audioOn && !au.paused && Math.abs(vd.currentTime - clock()) > 0.2) vd.currentTime = clock();
   // 视频被拦住了（开播 1.5 秒还没动）：换成印样
   if (!useSheets && performance.now() - playT0 > 1500 && vd.currentTime < 0.05) { useSheets = true; loadSheets(); vd.pause(); }
   const t = clock();
