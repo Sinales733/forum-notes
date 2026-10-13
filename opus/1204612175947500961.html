@@ -120,6 +120,12 @@ const SRC_RATIO = 84 / 300;                      // 小视频是 300 x 84 格
 const FONT = "Consolas,Menlo,'Roboto Mono','Droid Sans Mono',monospace";
 const FILM_CARDS = 7;                            // 字符画评论叠几条（盖满一屏再多一点）
 const KEY = "wlkc-state";
+// 访问统计：打开 / 开播 / 看完时各报一声到腾讯云（只记事件、在哪个 App、浏览器里的随机编号、时间）
+const STAT = "https://satoro-d4g2zvk5ra80f285c-1302267569.ap-shanghai.app.tcloudbase.com/wlkc";
+const VID = (() => { try { let v = localStorage.getItem("wlkc-v");
+  if (!v) { v = Math.random().toString(36).slice(2, 12); localStorage.setItem("wlkc-v", v); } return v; } catch (e) { return ""; } })();
+const ping = e => { if (/^(localhost|127.)/.test(location.hostname)) return; try { new Image().src = `${STAT}?e=${e}&v=${VID}&_=${Date.now()}`; } catch (x) {} };
+ping("open");
 // 放映时的"飞快往下刷"效果：0 = 原地不动；1 = 百叶窗；2 = 上下两头在飞；3 = 画面跟着跳。网址后面加 ?fx=1 可以临时切换
 const FX = +(new URLSearchParams(location.search).get("fx") ?? "") || (CONTENT.fx || 0);                        // 刷新也记得的状态
 const $ = id => document.getElementById(id);
@@ -519,6 +525,7 @@ function seek(m, t) {                              // 元数据没到时设 curr
 }
 function beginPlayback() {
   playing = true;
+  if (startAt < 1) ping("film");                   // 真正开播才算；刷新后接着播的不重复算
   playT0 = performance.now();
   vd.muted = true; au.muted = false; au.volume = 1;
   seek(au, startAt);
@@ -597,6 +604,7 @@ function film() {
 }
 function finish() {                                // 播完：停在最后一格，放开页面，可以接着往下滑
   mode = "done"; playing = false;
+  ping("end");
   au.pause(); vd.pause();
   $("pin").style.display = "none"; filmCards.forEach(c => c.classList.remove("blur"));
   if (FX === 1 && master.width) filmCards.forEach(c => { const cv = canvasOf(c); cv.getContext("2d").drawImage(master, 0, 0); });
